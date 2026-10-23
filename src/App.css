@@ -552,3 +552,50 @@
   color: #991b1b;
   border: 1px solid #fecaca;
 }
+
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  background: var(--card-background, #ffffff);
+}
+
+.history-item p {
+  margin: 6px 0;
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.875rem;
+}
+
+.history-item small {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary, #6b7280);
+}
+
+.history-value-in {
+  color: #15803d;
+  white-space: nowrap;
+}
+
+.history-value-out {
+  color: #b91c1c;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .history-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

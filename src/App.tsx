@@ -9,6 +9,9 @@ import './App.css'
 import { cadastrarUsuario } from './cadastrarUsuario'
 import { autenticarUsuario } from './autenticarUsuario'
 import { consultarSaldo } from './consultarSaldo'
+import { realizarSaque } from './realizarSaque'
+import { realizarTransferencia } from './realizarTransferencia'
+import { consultarHistorico } from './consultarHistorico'
 import { supabase } from './lib/supabase'
 
 type Page =
@@ -115,9 +118,10 @@ function App() {
                 <div>
                   <strong>Ambiente de desenvolvimento</strong>
                   <p>
-                    O cadastro, a autenticação e a consulta de saldo
-                    estão integrados ao Supabase. As demais operações
-                    financeiras serão implementadas nas próximas etapas.
+                    O cadastro, a autenticação, a consulta de saldo e
+                    as operações de saque e transferência estão
+                    integrados ao Supabase. Valide as operações antes
+                    de utilizar o sistema em produção.
                   </p>
                 </div>
               </div>
@@ -154,14 +158,14 @@ function App() {
                 <FeatureCard
                   icon="⇄"
                   title="Transferir"
-                  description="Acesse a funcionalidade de transferência."
+                  description="Transfira valores para outra conta."
                   onClick={() => setPage('transfer')}
                 />
 
                 <FeatureCard
                   icon="↗"
                   title="Realizar saque"
-                  description="Acesse a funcionalidade de saque."
+                  description="Solicite um saque da sua conta."
                   onClick={() => setPage('withdraw')}
                 />
 
@@ -184,46 +188,24 @@ function App() {
           )}
 
           {page === 'withdraw' && (
-            <FormPanel
-              eyebrow="UC-004"
-              title="Realizar saque"
-              description="Informe o valor que deseja retirar da sua conta."
-            >
-              <p className="placeholder-message">
-                O saque será habilitado após a implementação das validações
-                e da operação atômica no banco de dados.
-              </p>
-            </FormPanel>
+            <WithdrawPanel
+              onGoToLogin={() => setPage('login')}
+              onGoToBalance={() => setPage('balance')}
+            />
           )}
 
           {page === 'transfer' && (
-            <FormPanel
-              eyebrow="UC-005"
-              title="Realizar transferência"
-              description="Transfira valores para outra conta válida."
-            >
-              <p className="placeholder-message">
-                A transferência será habilitada após a implementação da
-                validação das contas e da operação atômica.
-              </p>
-            </FormPanel>
+            <TransferPanel
+              onGoToLogin={() => setPage('login')}
+              onGoToBalance={() => setPage('balance')}
+            />
           )}
 
-          {page === 'history' && (
-            <FormPanel
-              eyebrow="UC-006"
-              title="Histórico de transações"
-              description="Consulte as movimentações da sua conta."
-            >
-              <div className="empty-state">
-                <span className="empty-icon">◷</span>
-                <strong>Nenhuma movimentação carregada</strong>
-                <p>
-                  O histórico aparecerá aqui após a integração com o banco.
-                </p>
-              </div>
-            </FormPanel>
-          )}
+{page === 'history' && (
+  <HistoryPanel
+    onGoToLogin={() => setPage('login')}
+  />
+)}
 
           {page === 'support' && (
             <FormPanel
@@ -241,6 +223,627 @@ function App() {
     </div>
   )
 }
+
+function TransferPanel({
+  onGoToLogin,
+  onGoToBalance,
+}: {
+  onGoToLogin: () => void
+  onGoToBalance: () => void
+}) {
+  const [numeroDestino, setNumeroDestino] = useState('')
+  const [valor, setValor] = useState('')
+  const [transferenciaPendente, setTransferenciaPendente] = useState<{
+    numeroDestino: string
+    valor: number
+  } | null>(null)
+  const [mensagem, setMensagem] = useState('')
+  const [sucesso, setSucesso] = useState(false)
+  const [carregando, setCarregando] = useState(false)
+  const [saldoFinal, setSaldoFinal] = useState<number | null>(null)
+  const [transacaoId, setTransacaoId] = useState<string | null>(null)
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMensagem('')
+    setSucesso(false)
+    setSaldoFinal(null)
+    setTransacaoId(null)
+
+    const destino = numeroDestino.trim()
+    const valorNumerico = Number(valor.trim().replace(',', '.'))
+
+    if (
+      !/^\d+$/.test(destino) ||
+      !Number.isSafeInteger(Number(destino)) ||
+      Number(destino) <= 0
+    ) {
+      setMensagem('Informe um número de conta de destino válido.')
+      return
+    }
+
+    if (!Number.isFinite(valorNumerico) || valorNumerico <= 0) {
+      setMensagem('Informe um valor de transferência maior que zero.')
+      return
+    }
+
+    if (Math.round(valorNumerico * 100) !== valorNumerico * 100) {
+      setMensagem('Informe um valor com no máximo duas casas decimais.')
+      return
+    }
+
+    setTransferenciaPendente({
+      numeroDestino: destino,
+      valor: valorNumerico,
+    })
+  }
+
+  async function confirmarTransferencia() {
+    if (transferenciaPendente === null || carregando) return
+
+    setCarregando(true)
+    setMensagem('')
+    setSucesso(false)
+
+    try {
+      const resultado = await realizarTransferencia(
+        transferenciaPendente.numeroDestino,
+        transferenciaPendente.valor,
+      )
+
+      setMensagem(resultado.mensagem)
+      setSucesso(resultado.sucesso)
+
+      if (resultado.sucesso) {
+        setSaldoFinal(resultado.saldo ?? null)
+        setTransacaoId(resultado.transacao_id ?? null)
+        setNumeroDestino('')
+        setValor('')
+        setTransferenciaPendente(null)
+      }
+    } catch {
+      setMensagem(
+        'Não foi possível conectar ao serviço de transferência.',
+      )
+      setSucesso(false)
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  function cancelarTransferencia() {
+    if (carregando) return
+
+    setTransferenciaPendente(null)
+    setMensagem('')
+    setSucesso(false)
+  }
+
+  const valorFormatado =
+    transferenciaPendente === null
+      ? ''
+      : transferenciaPendente.valor.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        })
+
+  const saldoFormatado =
+    saldoFinal === null
+      ? ''
+      : saldoFinal.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        })
+
+  return (
+    <FormPanel
+      eyebrow="UC-005"
+      title="Realizar transferência"
+      description="Informe a conta de destino e o valor que deseja transferir."
+    >
+      <div className="register-form">
+        {transferenciaPendente === null ? (
+          <form className="register-form" onSubmit={handleSubmit}>
+            <div className="form-field">
+              <label htmlFor="transferencia-destino">
+                Número da conta de destino
+              </label>
+              <input
+                id="transferencia-destino"
+                name="numeroDestino"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="Ex.: 100002"
+                value={numeroDestino}
+                onChange={(event) => setNumeroDestino(event.target.value)}
+                required
+                disabled={carregando}
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="transferencia-valor">
+                Valor da transferência (R$)
+              </label>
+              <input
+                id="transferencia-valor"
+                name="valor"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="Ex.: 30,00"
+                value={valor}
+                onChange={(event) => setValor(event.target.value)}
+                required
+                disabled={carregando}
+              />
+            </div>
+
+            <p className="placeholder-message">
+              Confira o número da conta. A transferência só será
+              realizada após sua confirmação.
+            </p>
+
+            <button
+              className="submit-button"
+              type="submit"
+              disabled={carregando}
+            >
+              Continuar
+            </button>
+          </form>
+        ) : (
+          <div className="empty-state">
+            <span className="empty-icon">⇄</span>
+            <strong>Confirme sua transferência</strong>
+            <p>
+              Conta de destino: {transferenciaPendente.numeroDestino}
+            </p>
+            <p>Valor solicitado: {valorFormatado}</p>
+            <p>Deseja confirmar esta operação?</p>
+
+            <button
+              className="submit-button"
+              type="button"
+              onClick={() => void confirmarTransferencia()}
+              disabled={carregando}
+            >
+              {carregando
+                ? 'Processando...'
+                : 'Confirmar transferência'}
+            </button>
+
+            <button
+              className="submit-button"
+              type="button"
+              onClick={cancelarTransferencia}
+              disabled={carregando}
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+
+        {mensagem && (
+          <div
+            className={`form-feedback ${
+              sucesso ? 'feedback-success' : 'feedback-error'
+            }`}
+            role={sucesso ? 'status' : 'alert'}
+          >
+            {mensagem}
+          </div>
+        )}
+
+        {sucesso && (
+          <div className="empty-state">
+            <strong>Transferência concluída</strong>
+
+            {saldoFinal !== null && (
+              <p>Saldo após a transferência: {saldoFormatado}</p>
+            )}
+
+            {transacaoId && (
+              <p>Identificador da transação: {transacaoId}</p>
+            )}
+
+            <button
+              className="submit-button"
+              type="button"
+              onClick={onGoToBalance}
+            >
+              Consultar saldo
+            </button>
+          </div>
+        )}
+
+        {!sucesso &&
+          mensagem.toLowerCase().includes('entre na sua conta') && (
+            <button
+              className="submit-button"
+              type="button"
+              onClick={onGoToLogin}
+            >
+              Ir para o login
+            </button>
+          )}
+      </div>
+    </FormPanel>
+  )
+}
+
+function WithdrawPanel({
+  onGoToLogin,
+  onGoToBalance,
+}: {
+  onGoToLogin: () => void
+  onGoToBalance: () => void
+}) {
+  const [valor, setValor] = useState('')
+  const [valorPendente, setValorPendente] = useState<number | null>(null)
+  const [mensagem, setMensagem] = useState('')
+  const [sucesso, setSucesso] = useState(false)
+  const [carregando, setCarregando] = useState(false)
+  const [saldoFinal, setSaldoFinal] = useState<number | null>(null)
+  const [transacaoId, setTransacaoId] = useState<string | null>(null)
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMensagem('')
+    setSucesso(false)
+    setSaldoFinal(null)
+    setTransacaoId(null)
+
+    const valorNumerico = Number(valor.trim().replace(',', '.'))
+
+    if (!Number.isFinite(valorNumerico) || valorNumerico <= 0) {
+      setMensagem('Informe um valor de saque maior que zero.')
+      return
+    }
+
+    if (Math.round(valorNumerico * 100) !== valorNumerico * 100) {
+      setMensagem('Informe um valor com no máximo duas casas decimais.')
+      return
+    }
+
+    setValorPendente(valorNumerico)
+  }
+
+  async function confirmarSaque() {
+    if (valorPendente === null || carregando) return
+
+    setCarregando(true)
+    setMensagem('')
+    setSucesso(false)
+
+    try {
+      const resultado = await realizarSaque(valorPendente)
+
+      setMensagem(resultado.mensagem)
+      setSucesso(resultado.sucesso)
+
+      if (resultado.sucesso) {
+        setSaldoFinal(resultado.saldo ?? null)
+        setTransacaoId(resultado.transacao_id ?? null)
+        setValor('')
+        setValorPendente(null)
+      }
+    } catch {
+      setMensagem('Não foi possível conectar ao serviço de saque.')
+      setSucesso(false)
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  function cancelarSaque() {
+    if (carregando) return
+
+    setValorPendente(null)
+    setMensagem('')
+    setSucesso(false)
+  }
+
+  const valorFormatado =
+    valorPendente === null
+      ? ''
+      : valorPendente.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        })
+
+  const saldoFormatado =
+    saldoFinal === null
+      ? ''
+      : saldoFinal.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        })
+
+  return (
+    <FormPanel
+      eyebrow="UC-004"
+      title="Realizar saque"
+      description="Informe o valor que deseja retirar da sua conta."
+    >
+      <div className="register-form">
+        {valorPendente === null ? (
+          <form className="register-form" onSubmit={handleSubmit}>
+            <div className="form-field">
+              <label htmlFor="saque-valor">Valor do saque (R$)</label>
+              <input
+                id="saque-valor"
+                name="valor"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="Ex.: 50,00"
+                value={valor}
+                onChange={(event) => setValor(event.target.value)}
+                required
+                disabled={carregando}
+              />
+            </div>
+
+            <p className="placeholder-message">
+              O saque só será realizado depois da sua confirmação.
+            </p>
+
+            <button
+              className="submit-button"
+              type="submit"
+              disabled={carregando}
+            >
+              Continuar
+            </button>
+          </form>
+        ) : (
+          <div className="empty-state">
+            <span className="empty-icon">↗</span>
+            <strong>Confirme seu saque</strong>
+            <p>Valor solicitado: {valorFormatado}</p>
+            <p>Deseja confirmar esta operação?</p>
+
+            <button
+              className="submit-button"
+              type="button"
+              onClick={() => void confirmarSaque()}
+              disabled={carregando}
+            >
+              {carregando ? 'Processando...' : 'Confirmar saque'}
+            </button>
+
+            <button
+              className="submit-button"
+              type="button"
+              onClick={cancelarSaque}
+              disabled={carregando}
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+
+        {mensagem && (
+          <div
+            className={`form-feedback ${
+              sucesso ? 'feedback-success' : 'feedback-error'
+            }`}
+            role={sucesso ? 'status' : 'alert'}
+          >
+            {mensagem}
+          </div>
+        )}
+
+        {sucesso && (
+          <div className="empty-state">
+            <strong>Saque concluído</strong>
+
+            {saldoFinal !== null && (
+              <p>Saldo após o saque: {saldoFormatado}</p>
+            )}
+
+            {transacaoId && (
+              <p>Identificador da transação: {transacaoId}</p>
+            )}
+
+            <button
+              className="submit-button"
+              type="button"
+              onClick={onGoToBalance}
+            >
+              Consultar saldo
+            </button>
+          </div>
+        )}
+
+        {!sucesso &&
+          mensagem.toLowerCase().includes('entre na sua conta') && (
+            <button
+              className="submit-button"
+              type="button"
+              onClick={onGoToLogin}
+            >
+              Ir para o login
+            </button>
+          )}
+      </div>
+    </FormPanel>
+  )
+}
+
+
+function HistoryPanel({
+  onGoToLogin,
+}: {
+  onGoToLogin: () => void
+}) {
+  const [numeroConta, setNumeroConta] = useState<string | null>(null)
+  const [transacoes, setTransacoes] = useState<
+    Awaited<ReturnType<typeof consultarHistorico>> extends {
+      sucesso: true
+      transacoes: infer T
+    }
+      ? T
+      : never
+  >([])
+  const [mensagem, setMensagem] = useState('')
+  const [carregando, setCarregando] = useState(true)
+
+  async function carregarHistorico() {
+    setCarregando(true)
+    setMensagem('')
+    setNumeroConta(null)
+    setTransacoes([])
+
+    try {
+      const resultado = await consultarHistorico()
+
+      if (!resultado.sucesso) {
+        setMensagem(resultado.mensagem)
+        return
+      }
+
+      setNumeroConta(resultado.numeroConta)
+      setTransacoes(resultado.transacoes)
+    } catch {
+      setMensagem('Não foi possível conectar ao banco de dados.')
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  useEffect(() => {
+    void carregarHistorico()
+  }, [])
+
+  function formatarData(data: string) {
+    return new Date(data).toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    })
+  }
+
+  function formatarValor(valor: number) {
+    return valor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    })
+  }
+
+  return (
+    <FormPanel
+      eyebrow="UC-006"
+      title="Histórico de transações"
+      description="Consulte as movimentações vinculadas à sua conta."
+    >
+      {carregando ? (
+        <div className="empty-state">
+          <strong>Carregando histórico...</strong>
+          <p>Aguarde enquanto buscamos suas transações.</p>
+        </div>
+      ) : mensagem ? (
+        <div className="register-form">
+          <div className="form-feedback feedback-error" role="alert">
+            {mensagem}
+          </div>
+
+          {mensagem.includes('precisa entrar') ? (
+            <button
+              type="button"
+              className="submit-button"
+              onClick={onGoToLogin}
+            >
+              Ir para o login
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="submit-button"
+              onClick={() => void carregarHistorico()}
+            >
+              Tentar novamente
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="register-form">
+          <div className="empty-state">
+            <span className="empty-icon">◷</span>
+            <p>Conta nº {numeroConta}</p>
+            <strong>
+              {transacoes.length === 0
+                ? 'Nenhuma movimentação encontrada'
+                : `${transacoes.length} movimentação(ões)`}
+            </strong>
+            <p>
+              As transações mais recentes aparecem primeiro.
+            </p>
+          </div>
+
+          {transacoes.length > 0 && (
+            <div className="history-list">
+              {transacoes.map((transacao) => {
+                const recebida =
+                  transacao.tipo === 'transferencia' &&
+                  transacao.conta_destino_id !== null &&
+                  transacao.conta_destino_id !==
+                    transacao.conta_origem_id
+
+                const titulo =
+                  transacao.tipo === 'saque'
+                    ? 'Saque'
+                    : recebida
+                      ? 'Transferência recebida'
+                      : 'Transferência enviada'
+
+                const valorExibido =
+                  recebida
+                    ? `+ ${formatarValor(transacao.valor)}`
+                    : `− ${formatarValor(transacao.valor)}`
+
+                return (
+                  <article
+                    className="history-item"
+                    key={transacao.id}
+                  >
+                    <div>
+                      <strong>{titulo}</strong>
+                      <p>{formatarData(transacao.criada_em)}</p>
+                      <small>
+                        Transação: {transacao.id}
+                      </small>
+                    </div>
+
+                    <strong
+                      className={
+                        recebida
+                          ? 'history-value-in'
+                          : 'history-value-out'
+                      }
+                    >
+                      {valorExibido}
+                    </strong>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="submit-button"
+            onClick={() => void carregarHistorico()}
+          >
+            Atualizar histórico
+          </button>
+        </div>
+      )}
+    </FormPanel>
+  )
+}
+
 
 function BalancePanel({
   onGoToLogin,
