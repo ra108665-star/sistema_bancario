@@ -8,6 +8,7 @@ import {
 import './App.css'
 import { cadastrarUsuario } from './cadastrarUsuario'
 import { autenticarUsuario } from './autenticarUsuario'
+import { consultarSaldo } from './consultarSaldo'
 import { supabase } from './lib/supabase'
 
 type Page =
@@ -103,6 +104,7 @@ function App() {
                   <h1>Bem-vindo ao Moneta.</h1>
                   <p>Seu sistema bancário em um só lugar.</p>
                 </div>
+
                 <div className="welcome-symbol" aria-hidden="true">
                   M
                 </div>
@@ -113,9 +115,9 @@ function App() {
                 <div>
                   <strong>Ambiente de desenvolvimento</strong>
                   <p>
-                    O cadastro e a autenticação estão integrados ao Supabase.
-                    As operações financeiras serão implementadas nas
-                    próximas etapas.
+                    O cadastro, a autenticação e a consulta de saldo
+                    estão integrados ao Supabase. As demais operações
+                    financeiras serão implementadas nas próximas etapas.
                   </p>
                 </div>
               </div>
@@ -134,30 +136,35 @@ function App() {
                   description="Inicie o cadastro de um cliente."
                   onClick={() => setPage('register')}
                 />
+
                 <FeatureCard
                   icon="⇥"
                   title="Entrar na conta"
                   description="Acesse sua conta com suas credenciais."
                   onClick={() => setPage('login')}
                 />
+
                 <FeatureCard
                   icon="＄"
                   title="Consultar saldo"
                   description="Consulte o saldo disponível."
                   onClick={() => setPage('balance')}
                 />
+
                 <FeatureCard
                   icon="⇄"
                   title="Transferir"
                   description="Acesse a funcionalidade de transferência."
                   onClick={() => setPage('transfer')}
                 />
+
                 <FeatureCard
                   icon="↗"
                   title="Realizar saque"
                   description="Acesse a funcionalidade de saque."
                   onClick={() => setPage('withdraw')}
                 />
+
                 <FeatureCard
                   icon="◷"
                   title="Histórico"
@@ -173,17 +180,7 @@ function App() {
           {page === 'login' && <LoginForm />}
 
           {page === 'balance' && (
-            <FormPanel
-              eyebrow="UC-003"
-              title="Consultar saldo"
-              description="Consulte o saldo da sua conta autenticada."
-            >
-              <div className="empty-state">
-                <span className="empty-icon">＄</span>
-                <strong>Saldo indisponível</strong>
-                <p>Entre na sua conta para consultar o saldo.</p>
-              </div>
-            </FormPanel>
+            <BalancePanel onGoToLogin={() => setPage('login')} />
           )}
 
           {page === 'withdraw' && (
@@ -242,6 +239,108 @@ function App() {
         </section>
       </main>
     </div>
+  )
+}
+
+function BalancePanel({
+  onGoToLogin,
+}: {
+  onGoToLogin: () => void
+}) {
+  const [saldo, setSaldo] = useState<number | null>(null)
+  const [numero, setNumero] = useState<string | null>(null)
+  const [mensagem, setMensagem] = useState('')
+  const [carregando, setCarregando] = useState(true)
+
+  async function carregarSaldo() {
+    setCarregando(true)
+    setMensagem('')
+    setSaldo(null)
+    setNumero(null)
+
+    try {
+      const resultado = await consultarSaldo()
+
+      if (!resultado.sucesso) {
+        setMensagem(resultado.mensagem)
+        return
+      }
+
+      setSaldo(resultado.saldo)
+      setNumero(resultado.numero)
+    } catch {
+      setMensagem('Não foi possível conectar ao banco de dados.')
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  useEffect(() => {
+    void carregarSaldo()
+  }, [])
+
+  const saldoFormatado =
+    saldo === null
+      ? ''
+      : saldo.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        })
+
+  return (
+    <FormPanel
+      eyebrow="UC-003"
+      title="Consultar saldo"
+      description="Consulte o saldo da sua conta autenticada."
+    >
+      {carregando ? (
+        <div className="empty-state">
+          <strong>Consultando saldo...</strong>
+          <p>Aguarde enquanto buscamos os dados da sua conta.</p>
+        </div>
+      ) : saldo !== null ? (
+        <div className="register-form">
+          <div className="empty-state">
+            <span className="empty-icon">＄</span>
+            <p>Conta nº {numero}</p>
+            <strong>Saldo disponível</strong>
+            <h2>{saldoFormatado}</h2>
+          </div>
+
+          <button
+            type="button"
+            className="submit-button"
+            onClick={() => void carregarSaldo()}
+          >
+            Atualizar saldo
+          </button>
+        </div>
+      ) : (
+        <div className="register-form">
+          <div className="form-feedback feedback-error" role="alert">
+            {mensagem}
+          </div>
+
+          {mensagem.includes('precisa entrar') ? (
+            <button
+              type="button"
+              className="submit-button"
+              onClick={onGoToLogin}
+            >
+              Ir para o login
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="submit-button"
+              onClick={() => void carregarSaldo()}
+            >
+              Tentar novamente
+            </button>
+          )}
+        </div>
+      )}
+    </FormPanel>
   )
 }
 
@@ -328,7 +427,9 @@ function LoginForm() {
       setMensagem('Sessão encerrada com sucesso.')
       setSucesso(true)
     } catch {
-      setMensagem('Não foi possível conectar ao serviço de autenticação.')
+      setMensagem(
+        'Não foi possível conectar ao serviço de autenticação.',
+      )
     } finally {
       setCarregando(false)
     }
