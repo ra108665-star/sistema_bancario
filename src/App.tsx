@@ -1,7 +1,14 @@
 
-import { useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import './App.css'
 import { cadastrarUsuario } from './cadastrarUsuario'
+import { autenticarUsuario } from './autenticarUsuario'
+import { supabase } from './lib/supabase'
 
 type Page =
   | 'dashboard'
@@ -106,7 +113,7 @@ function App() {
                 <div>
                   <strong>Ambiente de desenvolvimento</strong>
                   <p>
-                    O cadastro já está sendo integrado ao Supabase.
+                    O cadastro e a autenticação estão integrados ao Supabase.
                     As operações financeiras serão implementadas nas
                     próximas etapas.
                   </p>
@@ -163,17 +170,7 @@ function App() {
 
           {page === 'register' && <RegisterForm />}
 
-          {page === 'login' && (
-            <FormPanel
-              eyebrow="UC-002"
-              title="Autenticar usuário"
-              description="Entre para acessar as funcionalidades protegidas."
-            >
-              <p className="placeholder-message">
-                A autenticação será implementada na próxima etapa.
-              </p>
-            </FormPanel>
-          )}
+          {page === 'login' && <LoginForm />}
 
           {page === 'balance' && (
             <FormPanel
@@ -224,7 +221,9 @@ function App() {
               <div className="empty-state">
                 <span className="empty-icon">◷</span>
                 <strong>Nenhuma movimentação carregada</strong>
-                <p>O histórico aparecerá aqui após a integração com o banco.</p>
+                <p>
+                  O histórico aparecerá aqui após a integração com o banco.
+                </p>
               </div>
             </FormPanel>
           )}
@@ -243,6 +242,184 @@ function App() {
         </section>
       </main>
     </div>
+  )
+}
+
+function LoginForm() {
+  const [email, setEmail] = useState('')
+  const [senha, setSenha] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [sucesso, setSucesso] = useState(false)
+  const [carregando, setCarregando] = useState(false)
+  const [usuario, setUsuario] = useState<string | null>(null)
+  const [verificandoSessao, setVerificandoSessao] = useState(true)
+
+  useEffect(() => {
+    let ativo = true
+
+    async function verificarSessao() {
+      const { data, error } = await supabase.auth.getSession()
+
+      if (!ativo) return
+
+      if (error) {
+        setMensagem('Não foi possível verificar a sessão atual.')
+      } else {
+        setUsuario(data.session?.user.email ?? null)
+      }
+
+      setVerificandoSessao(false)
+    }
+
+    void verificarSessao()
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_evento, session) => {
+        if (ativo) {
+          setUsuario(session?.user.email ?? null)
+        }
+      },
+    )
+
+    return () => {
+      ativo = false
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMensagem('')
+    setSucesso(false)
+    setCarregando(true)
+
+    try {
+      const resultado = await autenticarUsuario(email, senha)
+
+      setMensagem(resultado.mensagem)
+      setSucesso(resultado.sucesso)
+
+      if (resultado.sucesso) {
+        setSenha('')
+      }
+    } catch {
+      setMensagem(
+        'Não foi possível conectar ao serviço de autenticação.',
+      )
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  async function handleLogout() {
+    setMensagem('')
+    setSucesso(false)
+    setCarregando(true)
+
+    try {
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        setMensagem('Não foi possível encerrar a sessão.')
+        return
+      }
+
+      setSenha('')
+      setMensagem('Sessão encerrada com sucesso.')
+      setSucesso(true)
+    } catch {
+      setMensagem('Não foi possível conectar ao serviço de autenticação.')
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  if (verificandoSessao) {
+    return (
+      <FormPanel
+        eyebrow="UC-002"
+        title="Autenticar usuário"
+        description="Verificando a sessão atual..."
+      >
+        <p className="placeholder-message">Aguarde um momento.</p>
+      </FormPanel>
+    )
+  }
+
+  return (
+    <FormPanel
+      eyebrow="UC-002"
+      title="Autenticar usuário"
+      description="Entre com o e-mail e a senha utilizados no cadastro."
+    >
+      {usuario ? (
+        <div className="register-form">
+          <div className="form-feedback feedback-success" role="status">
+            Você está autenticado como <strong>{usuario}</strong>.
+          </div>
+
+          <button
+            type="button"
+            className="submit-button"
+            onClick={handleLogout}
+            disabled={carregando}
+          >
+            {carregando ? 'Encerrando sessão...' : 'Encerrar sessão'}
+          </button>
+        </div>
+      ) : (
+        <form className="register-form" onSubmit={handleSubmit}>
+          <div className="form-field">
+            <label htmlFor="login-email">E-mail</label>
+            <input
+              id="login-email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="voce@exemplo.com"
+              required
+              disabled={carregando}
+            />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="login-senha">Senha</label>
+            <input
+              id="login-senha"
+              name="senha"
+              type="password"
+              autoComplete="current-password"
+              value={senha}
+              onChange={(event) => setSenha(event.target.value)}
+              placeholder="Digite sua senha"
+              required
+              disabled={carregando}
+            />
+          </div>
+
+          <button
+            className="submit-button"
+            type="submit"
+            disabled={carregando}
+          >
+            {carregando ? 'Entrando...' : 'Entrar'}
+          </button>
+        </form>
+      )}
+
+      {mensagem && (
+        <p
+          className={`form-feedback ${
+            sucesso ? 'feedback-success' : 'feedback-error'
+          }`}
+          role={sucesso ? 'status' : 'alert'}
+        >
+          {mensagem}
+        </p>
+      )}
+    </FormPanel>
   )
 }
 
@@ -360,7 +537,9 @@ function RegisterForm() {
 
         {mensagem && (
           <div
-            className={`form-feedback ${sucesso ? 'feedback-success' : 'feedback-error'}`}
+            className={`form-feedback ${
+              sucesso ? 'feedback-success' : 'feedback-error'
+            }`}
             role={sucesso ? 'status' : 'alert'}
           >
             {mensagem}
