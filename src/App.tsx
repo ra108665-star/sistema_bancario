@@ -1,6 +1,7 @@
 
-import { useState } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import './App.css'
+import { cadastrarUsuario } from './cadastrarUsuario'
 
 type Page =
   | 'dashboard'
@@ -95,7 +96,9 @@ function App() {
                   <h1>Bem-vindo ao Moneta.</h1>
                   <p>Seu sistema bancário em um só lugar.</p>
                 </div>
-                <div className="welcome-symbol" aria-hidden="true">M</div>
+                <div className="welcome-symbol" aria-hidden="true">
+                  M
+                </div>
               </div>
 
               <div className="notice">
@@ -103,8 +106,9 @@ function App() {
                 <div>
                   <strong>Ambiente de desenvolvimento</strong>
                   <p>
-                    A interface está pronta para a integração. Nenhuma operação
-                    financeira é executada nesta etapa.
+                    O cadastro já está sendo integrado ao Supabase.
+                    As operações financeiras serão implementadas nas
+                    próximas etapas.
                   </p>
                 </div>
               </div>
@@ -157,17 +161,7 @@ function App() {
             </>
           )}
 
-          {page === 'register' && (
-            <FormPanel
-              eyebrow="UC-001"
-              title="Cadastrar usuário"
-              description="Preencha os dados para iniciar seu cadastro."
-            >
-              <p className="placeholder-message">
-                O formulário será conectado ao Supabase Auth na próxima etapa.
-              </p>
-            </FormPanel>
-          )}
+          {page === 'register' && <RegisterForm />}
 
           {page === 'login' && (
             <FormPanel
@@ -176,7 +170,7 @@ function App() {
               description="Entre para acessar as funcionalidades protegidas."
             >
               <p className="placeholder-message">
-                A autenticação será implementada com Supabase Auth.
+                A autenticação será implementada na próxima etapa.
               </p>
             </FormPanel>
           )}
@@ -252,6 +246,139 @@ function App() {
   )
 }
 
+function RegisterForm() {
+  const [nome, setNome] = useState('')
+  const [email, setEmail] = useState('')
+  const [senha, setSenha] = useState('')
+  const [confirmacao, setConfirmacao] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [sucesso, setSucesso] = useState(false)
+  const [carregando, setCarregando] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMensagem('')
+    setSucesso(false)
+
+    if (senha !== confirmacao) {
+      setMensagem('As senhas não coincidem.')
+      return
+    }
+
+    setCarregando(true)
+
+    try {
+      const resultado = await cadastrarUsuario(nome, email, senha)
+
+      setMensagem(resultado.mensagem)
+      setSucesso(resultado.sucesso)
+
+      if (resultado.sucesso) {
+        setNome('')
+        setEmail('')
+        setSenha('')
+        setConfirmacao('')
+      }
+    } catch {
+      setMensagem(
+        'Não foi possível concluir o cadastro. Verifique a conexão e tente novamente.',
+      )
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  return (
+    <FormPanel
+      eyebrow="UC-001"
+      title="Cadastrar usuário"
+      description="Preencha os dados para criar seu cadastro."
+    >
+      <form className="register-form" onSubmit={handleSubmit}>
+        <div className="form-field">
+          <label htmlFor="nome">Nome completo</label>
+          <input
+            id="nome"
+            name="nome"
+            type="text"
+            autoComplete="name"
+            value={nome}
+            onChange={(event) => setNome(event.target.value)}
+            placeholder="Digite seu nome"
+            required
+            maxLength={120}
+            disabled={carregando}
+          />
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="email">E-mail</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="voce@exemplo.com"
+            required
+            disabled={carregando}
+          />
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="senha">Senha</label>
+          <input
+            id="senha"
+            name="senha"
+            type="password"
+            autoComplete="new-password"
+            value={senha}
+            onChange={(event) => setSenha(event.target.value)}
+            placeholder="Mínimo de 6 caracteres"
+            minLength={6}
+            required
+            disabled={carregando}
+          />
+        </div>
+
+        <div className="form-field">
+          <label htmlFor="confirmacao">Confirmar senha</label>
+          <input
+            id="confirmacao"
+            name="confirmacao"
+            type="password"
+            autoComplete="new-password"
+            value={confirmacao}
+            onChange={(event) => setConfirmacao(event.target.value)}
+            placeholder="Digite a senha novamente"
+            minLength={6}
+            required
+            disabled={carregando}
+          />
+        </div>
+
+        {mensagem && (
+          <div
+            className={`form-feedback ${sucesso ? 'feedback-success' : 'feedback-error'}`}
+            role={sucesso ? 'status' : 'alert'}
+          >
+            {mensagem}
+          </div>
+        )}
+
+        <button
+          className="submit-button"
+          type="submit"
+          disabled={carregando}
+        >
+          {carregando ? 'Cadastrando...' : 'Criar cadastro'}
+        </button>
+      </form>
+    </FormPanel>
+  )
+}
+
 function FeatureCard({
   icon,
   title,
@@ -282,7 +409,7 @@ function FormPanel({
   eyebrow: string
   title: string
   description: string
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <div className="form-panel">
