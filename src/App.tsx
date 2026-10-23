@@ -11,7 +11,10 @@ import { autenticarUsuario } from './autenticarUsuario'
 import { consultarSaldo } from './consultarSaldo'
 import { realizarSaque } from './realizarSaque'
 import { realizarTransferencia } from './realizarTransferencia'
-import { consultarHistorico } from './consultarHistorico'
+import {
+  consultarHistorico,
+  type TransacaoHistorico,
+} from './consultarHistorico'
 import { supabase } from './lib/supabase'
 
 type Page =
@@ -680,11 +683,7 @@ function HistoryPanel({
   onGoToLogin: () => void
 }) {
   const [numeroConta, setNumeroConta] = useState<string | null>(null)
-  const [transacoes, setTransacoes] = useState<
-    Awaited<ReturnType<typeof consultarHistorico>> extends {
-      sucesso: true
-      transacoes: infer T
-    }
+  const [transacoes, setTransacoes] = useState<TransacaoHistorico[]>([])
       ? T
       : never
   >([])
