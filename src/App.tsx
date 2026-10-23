@@ -204,11 +204,11 @@ function App() {
             />
           )}
 
-{page === 'history' && (
-  <HistoryPanel
-    onGoToLogin={() => setPage('login')}
-  />
-)}
+          {page === 'history' && (
+            <HistoryPanel
+              onGoToLogin={() => setPage('login')}
+            />
+          )}
 
           {page === 'support' && (
             <FormPanel
@@ -676,17 +676,14 @@ function WithdrawPanel({
   )
 }
 
-
 function HistoryPanel({
   onGoToLogin,
 }: {
   onGoToLogin: () => void
 }) {
   const [numeroConta, setNumeroConta] = useState<string | null>(null)
+  const [contaId, setContaId] = useState<string | null>(null)
   const [transacoes, setTransacoes] = useState<TransacaoHistorico[]>([])
-      ? T
-      : never
-  >([])
   const [mensagem, setMensagem] = useState('')
   const [carregando, setCarregando] = useState(true)
 
@@ -694,6 +691,7 @@ function HistoryPanel({
     setCarregando(true)
     setMensagem('')
     setNumeroConta(null)
+    setContaId(null)
     setTransacoes([])
 
     try {
@@ -704,7 +702,29 @@ function HistoryPanel({
         return
       }
 
+      const { data: usuarioData, error: usuarioError } =
+        await supabase.auth.getUser()
+
+      if (usuarioError || !usuarioData.user) {
+        setMensagem(
+          'Você precisa entrar na sua conta para consultar o histórico.',
+        )
+        return
+      }
+
+      const { data: conta, error: contaError } = await supabase
+        .from('contas')
+        .select('id')
+        .eq('titular_id', usuarioData.user.id)
+        .maybeSingle()
+
+      if (contaError || !conta) {
+        setMensagem('Não foi possível localizar sua conta.')
+        return
+      }
+
       setNumeroConta(resultado.numeroConta)
+      setContaId(conta.id)
       setTransacoes(resultado.transacoes)
     } catch {
       setMensagem('Não foi possível conectar ao banco de dados.')
@@ -786,9 +806,7 @@ function HistoryPanel({
               {transacoes.map((transacao) => {
                 const recebida =
                   transacao.tipo === 'transferencia' &&
-                  transacao.conta_destino_id !== null &&
-                  transacao.conta_destino_id !==
-                    transacao.conta_origem_id
+                  transacao.conta_destino_id === contaId
 
                 const titulo =
                   transacao.tipo === 'saque'
@@ -842,7 +860,6 @@ function HistoryPanel({
     </FormPanel>
   )
 }
-
 
 function BalancePanel({
   onGoToLogin,
