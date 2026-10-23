@@ -15,6 +15,10 @@ import {
   consultarHistorico,
   type TransacaoHistorico,
 } from './consultarHistorico'
+import {
+  consultarTransacoesSuporte,
+  type TransacaoSuporte,
+} from './consultarTransacoesSuporte'
 import { supabase } from './lib/supabase'
 
 type Page =
@@ -210,17 +214,7 @@ function App() {
             />
           )}
 
-          {page === 'support' && (
-            <FormPanel
-              eyebrow="UC-007"
-              title="Consulta para suporte"
-              description="Localize uma transação para auxiliar no atendimento."
-            >
-              <p className="placeholder-message">
-                Esta funcionalidade será restrita aos operadores autorizados.
-              </p>
-            </FormPanel>
-          )}
+          {page === 'support' && <SupportPanel />}
         </section>
       </main>
     </div>
@@ -857,6 +851,145 @@ function HistoryPanel({
           </button>
         </div>
       )}
+    </FormPanel>
+  )
+}
+
+
+function SupportPanel() {
+  const [busca, setBusca] = useState('')
+  const [transacoes, setTransacoes] = useState<TransacaoSuporte[]>([])
+  const [mensagem, setMensagem] = useState('')
+  const [sucesso, setSucesso] = useState(false)
+  const [carregando, setCarregando] = useState(false)
+  const [pesquisou, setPesquisou] = useState(false)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMensagem('')
+    setSucesso(false)
+    setTransacoes([])
+    setPesquisou(false)
+
+    const termo = busca.trim()
+
+    if (!termo) {
+      setMensagem('Informe o ID da transação ou o número da conta.')
+      return
+    }
+
+    setCarregando(true)
+
+    try {
+      const resultado = await consultarTransacoesSuporte(termo)
+
+      setMensagem(resultado.mensagem)
+      setSucesso(resultado.sucesso)
+      setTransacoes(resultado.transacoes)
+      setPesquisou(true)
+    } catch {
+      setMensagem('Não foi possível consultar as transações.')
+      setSucesso(false)
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  function formatarData(data: string) {
+    return new Date(data).toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    })
+  }
+
+  function formatarValor(valor: number) {
+    return valor.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    })
+  }
+
+  return (
+    <FormPanel
+      eyebrow="UC-007"
+      title="Consulta para suporte"
+      description="Pesquise transações pelo identificador da transação ou pelo número de uma conta. A consulta é restrita aos operadores autorizados."
+    >
+      <div className="register-form">
+        <form className="register-form" onSubmit={handleSubmit}>
+          <div className="form-field">
+            <label htmlFor="suporte-busca">
+              ID da transação ou número da conta
+            </label>
+            <input
+              id="suporte-busca"
+              name="busca"
+              type="text"
+              autoComplete="off"
+              value={busca}
+              onChange={(event) => setBusca(event.target.value)}
+              placeholder="Cole o ID ou informe o número da conta"
+              required
+              disabled={carregando}
+            />
+          </div>
+
+          <button
+            className="submit-button"
+            type="submit"
+            disabled={carregando}
+          >
+            {carregando ? 'Pesquisando...' : 'Pesquisar transações'}
+          </button>
+        </form>
+
+        {mensagem && (
+          <div
+            className={`form-feedback ${
+              sucesso ? 'feedback-success' : 'feedback-error'
+            }`}
+            role={sucesso ? 'status' : 'alert'}
+          >
+            {mensagem}
+          </div>
+        )}
+
+        {sucesso && transacoes.length > 0 && (
+          <div className="history-list">
+            {transacoes.map((transacao) => (
+              <article className="history-item" key={transacao.id}>
+                <div>
+                  <strong>
+                    {transacao.tipo === 'saque'
+                      ? 'Saque'
+                      : 'Transferência'}
+                  </strong>
+                  <p>Data: {formatarData(transacao.criada_em)}</p>
+                  <small>ID: {transacao.id}</small>
+                  <p>Conta de origem: {transacao.conta_origem}</p>
+                  {transacao.conta_destino !== null && (
+                    <p>Conta de destino: {transacao.conta_destino}</p>
+                  )}
+                </div>
+
+                <strong className="history-value-out">
+                  {formatarValor(transacao.valor)}
+                </strong>
+              </article>
+            ))}
+          </div>
+        )}
+
+        {pesquisou && sucesso && transacoes.length === 0 && (
+          <div className="empty-state">
+            <span className="empty-icon">⌕</span>
+            <strong>Nenhuma transação encontrada</strong>
+            <p>
+              Confira o identificador ou o número da conta e tente novamente.
+            </p>
+          </div>
+        )}
+      </div>
     </FormPanel>
   )
 }
